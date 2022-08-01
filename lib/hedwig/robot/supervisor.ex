@@ -1,10 +1,10 @@
 defmodule Hedwig.Robot.Supervisor do
   @moduledoc false
 
-  use Supervisor
+  use DynamicSupervisor
 
   def start_link(opts \\ []) do
-    Supervisor.start_link(__MODULE__, [], opts)
+    DynamicSupervisor.start_link(__MODULE__, [], opts)
   end
 
   def config(robot, otp_app, opts) do
@@ -15,34 +15,45 @@ defmodule Hedwig.Robot.Supervisor do
       |> Keyword.merge(opts)
     else
       raise ArgumentError,
-        "configuration for #{inspect robot} not specified in #{inspect otp_app} environment"
+            "configuration for #{inspect(robot)} not specified in #{inspect(otp_app)} environment"
     end
   end
 
   def parse_config(robot, opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
-    robot_config  = Application.get_env(otp_app, robot, [])
+    robot_config = Application.get_env(otp_app, robot, [])
     adapter = opts[:adapter] || robot_config[:adapter]
 
     unless adapter do
-      raise ArgumentError, "missing `:adapter` configuration for " <>
-                           "#{inspect otp_app}, #{inspect robot}"
+      raise ArgumentError,
+            "missing `:adapter` configuration for " <>
+              "#{inspect(otp_app)}, #{inspect(robot)}"
     end
 
     unless Code.ensure_loaded?(adapter) do
-      raise ArgumentError, "adapter #{inspect adapter} was not compiled, " <>
-                           "ensure it is correct and it is included as a " <>
-                           "project dependency."
+      raise ArgumentError,
+            "adapter #{inspect(adapter)} was not compiled, " <>
+              "ensure it is correct and it is included as a " <>
+              "project dependency."
     end
 
     {otp_app, adapter, robot_config}
   end
 
+  @impl DynamicSupervisor
   def init(_) do
-    children = [
-      worker(Hedwig.Robot, [], restart: :transient)
-    ]
+    DynamicSupervisor.init(strategy: :one_for_one)
+  end
 
-    supervise(children, strategy: :simple_one_for_one)
+  def start_robot(robot, opts \\ []) do
+    DynamicSupervisor.start_child(__MODULE__, {Hedwig.Robot, [robot, opts]})
+  end
+
+  def stop_robot(pid) do
+    DynamicSupervisor.terminate_child(__MODULE__, pid)
+  end
+
+  def which_robots do
+    DynamicSupervisor.which_children(__MODULE__)
   end
 end

@@ -21,21 +21,15 @@ defmodule Hedwig do
   @doc """
   Starts a robot with the given configuration.
   """
-  def start_robot(robot, opts \\ []) do
-    Supervisor.start_child(Hedwig.Robot.Supervisor, [robot, opts])
-  end
+  defdelegate start_robot(robot, opts \\ []), to: Hedwig.Robot.Supervisor
 
   @doc """
   Stops a robot with the given PID.
   """
-  def stop_robot(pid) do
-    Supervisor.terminate_child(Hedwig.Robot.Supervisor, pid)
-  end
+  defdelegate stop_robot(pid), to: Hedwig.Robot.Supervisor
 
   @doc """
   List all robots.
   """
-  def which_robots do
-    Supervisor.which_children(Hedwig.Robot.Supervisor)
-  end
+  defdelegate which_robots, to: Hedwig.Robot.Supervisor
 end

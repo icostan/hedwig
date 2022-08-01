@@ -43,15 +43,14 @@ defmodule Hedwig.Robot do
 
   defmacro __using__(opts) do
     quote location: :keep, bind_quoted: [opts: opts] do
-      use GenServer
+      use GenServer, restart: :transient
       require Logger
 
-      {otp_app, adapter, robot_config} =
-        Hedwig.Robot.Supervisor.parse_config(__MODULE__, opts)
+      {otp_app, adapter, robot_config} = Hedwig.Robot.Supervisor.parse_config(__MODULE__, opts)
 
       @adapter adapter
       @before_compile adapter
-      @config  robot_config
+      @config robot_config
       @log_level robot_config[:log_level] || :debug
       @otp_app otp_app
 
@@ -68,9 +67,12 @@ defmodule Hedwig.Robot do
       end
 
       def log(msg) do
-        Logger.unquote(@log_level)(fn ->
-          msg
-        end, [])
+        Logger.unquote(@log_level)(
+          fn ->
+            msg
+          end,
+          []
+        )
       end
 
       def __adapter__, do: @adapter
@@ -88,13 +90,15 @@ defmodule Hedwig.Robot do
         {:ok, adapter} = @adapter.start_link(robot, opts)
         {:ok, responder_sup} = Hedwig.Responder.Supervisor.start_link()
 
-        {:ok, %Hedwig.Robot{
-          adapter: adapter,
-          aka: aka,
-          name: name,
-          opts: opts,
-          responder_sup: responder_sup,
-          responders: responders}}
+        {:ok,
+         %Hedwig.Robot{
+           adapter: adapter,
+           aka: aka,
+           name: name,
+           opts: opts,
+           responder_sup: responder_sup,
+           responders: responders
+         }}
       end
 
       def handle_connect(state) do
@@ -108,6 +112,7 @@ defmodule Hedwig.Robot do
       def handle_in(%Hedwig.Message{} = msg, state) do
         {:dispatch, msg, state}
       end
+
       def handle_in(_msg, state) do
         {:noreply, state}
       end
@@ -124,6 +129,7 @@ defmodule Hedwig.Robot do
         case handle_connect(state) do
           {:ok, state} ->
             {:reply, :ok, state}
+
           {:stop, reason, state} ->
             {:stop, reason, state}
         end
@@ -133,8 +139,10 @@ defmodule Hedwig.Robot do
         case handle_disconnect(reason, state) do
           {:reconnect, state} ->
             {:reply, :reconnect, state}
+
           {:reconnect, timer, state} ->
             {:reply, {:reconnect, timer}, state}
+
           {:disconnect, reason, state} ->
             {:stop, reason, {:disconnect, reason}, state}
         end
@@ -182,8 +190,9 @@ defmodule Hedwig.Robot do
       def handle_cast({:install_responders, responders}, %{aka: aka, name: name} = state) do
         for {module, opts} <- responders do
           args = [module, {aka, name, opts, self()}]
-          Supervisor.start_child(state.responder_sup, args)
+          Hedwig.Responder.Supervisor.start_child(state.responder_sup, args)
         end
+
         {:noreply, state}
       end
 
@@ -191,29 +200,28 @@ defmodule Hedwig.Robot do
         {:noreply, state}
       end
 
-      def terminate(_reason, _state) do
-        :ok
-      end
-
-      def code_change(_old, state, _extra) do
-        {:ok, state}
-      end
-
       defp log_incorrect_return(atom) do
-        Logger.warn """
-        #{inspect atom} return value from `handle_in/2` only works with `%Hedwig.Message{}` structs.
-        """
+        Logger.warn("""
+        #{inspect(atom)} return value from `handle_in/2` only works with `%Hedwig.Message{}` structs.
+        """)
       end
 
       defoverridable [
         {:handle_connect, 1},
         {:handle_disconnect, 2},
         {:handle_in, 2},
-        {:terminate, 2},
-        {:code_change, 3},
         {:handle_info, 2}
       ]
     end
+  end
+
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, opts},
+      type: :worker,
+      restart: :transient
+    }
   end
 
   @doc false
@@ -295,7 +303,8 @@ defmodule Hedwig.Robot do
   called with the robot's state. It is expected that the function return
   `{:reconnect, state}` `{:reconnect, integer, state}`, or `{:disconnect, reason, state}`.
   """
-  @spec handle_disconnect(pid, any, integer) :: :reconnect | {:reconnect, integer} | {:disconnect, any}
+  @spec handle_disconnect(pid, any, integer) ::
+          :reconnect | {:reconnect, integer} | {:disconnect, any}
   def handle_disconnect(robot, reason, timeout \\ 5000) do
     GenServer.call(robot, {:handle_disconnect, reason}, timeout)
   end

@@ -2,12 +2,10 @@ defmodule Hedwig.Responder.Supervisor do
   @moduledoc false
 
   def start_link do
-    import Supervisor.Spec, warn: false
+    DynamicSupervisor.start_link(strategy: :one_for_one)
+  end
 
-    children = [
-      worker(Hedwig.Responder, [], restart: :transient)
-    ]
-
-    Supervisor.start_link(children, strategy: :simple_one_for_one)
+  def start_child(sup, opts) do
+    DynamicSupervisor.start_child(sup, {Hedwig.Responder, opts})
   end
 end
